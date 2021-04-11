@@ -34,6 +34,17 @@ return [
                     ],
                 ],
             ],
+            # Telegram Update WebHook
+            'faucet-web-home' => [
+                'type'    => Literal::class,
+                'options' => [
+                    'route' => '/welcome',
+                    'defaults' => [
+                        'controller' => Controller\TelegramController::class,
+                        'action'     => 'index',
+                    ],
+                ],
+            ],
         ],
     ],
 

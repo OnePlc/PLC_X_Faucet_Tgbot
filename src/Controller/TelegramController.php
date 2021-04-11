@@ -71,6 +71,14 @@ class TelegramController extends CoreEntityController
         }
     }
 
+    public function indexAction() {
+        $this->layout('layout/json');
+
+        echo 'Welcome to Telegram Bot API';
+
+        return false;
+    }
+
     private function loadTelegramPLCUser($iChatID) {
         $oPlcUserCheck = false;
         try {
