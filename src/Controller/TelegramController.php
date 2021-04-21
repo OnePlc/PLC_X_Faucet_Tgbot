@@ -25,6 +25,7 @@ use Laminas\Db\Sql\Select;
 use Laminas\Db\Sql\Where;
 use Laminas\Db\TableGateway\TableGateway;
 use MongoDB\Driver\Server;
+use OnePlace\Faucet\Tgbot\Module;
 use OnePlace\User\Model\UserTable;
 use OnePlace\Faucet\RPSServer\Controller\ServerController;
 
@@ -76,9 +77,13 @@ class TelegramController extends CoreEntityController
     public function indexAction() {
         $this->layout('layout/json');
 
-        echo 'Welcome to Telegram Bot API';
+        $aReturn = [
+            'state' => 'success',
+            'version' => Module::VERSION,
+            'message' => 'Welcome to Telegram Bot API Version '.Module::VERSION,
+        ];
 
-        return false;
+        return $this->defaultJSONResponse($aReturn);
     }
 
     private function loadTelegramPLCUser($iChatID) {
