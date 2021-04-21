@@ -24,6 +24,7 @@ use Laminas\Db\Adapter\AdapterInterface;
 use Laminas\Db\Sql\Select;
 use Laminas\Db\Sql\Where;
 use Laminas\Db\TableGateway\TableGateway;
+use MongoDB\Driver\Server;
 use OnePlace\User\Model\UserTable;
 use OnePlace\Faucet\RPSServer\Controller\ServerController;
 
@@ -112,7 +113,7 @@ class TelegramController extends CoreEntityController
         if($oPlcUserCheck) {
             $oGamePrepared = ServerController::getPreparedRPSGame($oPlcUserCheck);
             if($oGamePrepared) {
-                $aGameInfo = ServerController::startRPSGame($iVote,(float)$oGamePrepared->amount_bet,$oPlcUserCheck);
+                $aGameInfo = ServerController::startRPSGame($iVote,(float)$oGamePrepared->amount_bet,$oPlcUserCheck,'telegram');
                 if($aGameInfo['state'] == 'success') {
                     $keyboard = [
                         'keyboard' => [
@@ -136,8 +137,24 @@ class TelegramController extends CoreEntityController
                     ];
                     $aMsgData['reply'] = $aContent['text'];
                 } else {
+                    $keyboard = [
+                        'keyboard' => [
+                            [
+                                ['text' => '☑️️️ New Game'],
+                                ['text' => '👁‍️️ My Games'],
+                            ],
+                            [
+                                ['text' => '👁‍️️ Look for Games'],
+                            ],
+                            [
+                                ['text' => '🏠‍️️ Back to Menu']
+                            ]
+                        ]
+                    ];
+                    $encodedKeyboard = json_encode($keyboard);
                     $aContent = [
                         'chat_id' => $iChatID,
+                        'reply_markup' => $encodedKeyboard,
                         'text' => "Error while creating game: ".$aGameInfo['message'],
                     ];
                     $aMsgData['reply'] = $aContent['text'];
@@ -185,7 +202,7 @@ class TelegramController extends CoreEntityController
                     'user_idfs' => 1,
                     'chat_id' => $iChatID,
                     'date' => date('Y-m-d H:i:s', time()),
-                    'message' => utf8_decode($oUpdate->message->text),
+                    'message' => utf8_decode((isset($oUpdate->message->text)) ? $oUpdate->message->text : ''),
                     'parse_next' => 0,
                     'reply' => 'no reply',
                 ];
@@ -212,8 +229,19 @@ class TelegramController extends CoreEntityController
                                 $aMsgData['reply'] = $iGameID;
                                 $aMsgData['parse_next'] = 1;
                                 $aMsgData['parse_type'] = 'rpsvote';
-                                ServerController::joinRPSGame($iGameID, $oPlcUserCheck->getID());
-                                TelegramController::sendTelegramMessage($aContent);
+                                $oGame = ServerController::loadRPSGame($iGameID, 'client');
+                                if($oGame->amount_bet > $oPlcUserCheck->token_balance) {
+                                    $aContent = [
+                                        'chat_id' => $iChatID,
+                                        'text' => "Your balance is too low to join this game",
+                                    ];
+                                    $aMsgData['parse_next'] = 0;
+                                    $aMsgData['reply'] = $aContent['text'];
+                                    TelegramController::sendTelegramMessage($aContent);
+                                } else {
+                                    ServerController::joinRPSGame($iGameID, $oPlcUserCheck->getID());
+                                    TelegramController::sendTelegramMessage($aContent);
+                                }
                             } else {
                                 $aContent = [
                                     'chat_id' => $iChatID,
@@ -297,8 +325,13 @@ class TelegramController extends CoreEntityController
                                         }
                                         $aGamesKB[] = [['text' => '#'.$oGame->Match_ID.': '.$sEmote.' - '.TelegramController::timeElapsedString($oGame->date_created).' - '.$oGame->amount_bet.' Coins - Cancel']];
                                     }
+                                    $iGames = count($aGamesKB);
                                 } else {
                                     $aGamesKB[] = [['text' => 'No Open Games']];
+                                    $iGames = (count($aGamesKB)-3);
+                                }
+                                if($iGames < 0) {
+                                    $iGames = 0;
                                 }
                                 $aGamesKB[] = [['text' => '✊️️ Rock, Paper, Scissors']];
                                 $aGamesKB[] = [['text' => '🏠‍️️ Back to Menu']];
@@ -309,7 +342,7 @@ class TelegramController extends CoreEntityController
                                 $aContent = [
                                     'chat_id' => $iChatID,
                                     'reply_markup' => $encodedKeyboard,
-                                    'text' => "You have ".(count($aGamesKB)-2).' open Games',
+                                    'text' => "You have ".$iGames.' open Games',
                                 ];
                                 $aMsgData['reply'] = $aContent['text'];
 
@@ -821,8 +854,8 @@ class TelegramController extends CoreEntityController
                                         'parse_next' => 0,
                                     ],'Message_ID = '.$oReplyCheck->Message_ID);
 
-                                    if(ServerController::joinRPSGame($iGameID, $oPlcUserCheck->getID(), $iVote)) {
-                                        $aGameInfo = ServerController::matchRPSGame($iGameID, $iVote);
+                                    if(ServerController::joinRPSGame($iGameID, $oPlcUserCheck->getID(), $iVote, 'telegram')) {
+                                        $aGameInfo = ServerController::matchRPSGame($iGameID, $iVote, 0, 'telegram');
                                     }
                                     $aMsgData['reply'] = $aContent['text'];
                                 }
@@ -1057,6 +1090,9 @@ class TelegramController extends CoreEntityController
                                         'chat_id' => $iChatID,
                                         'text' => "There is already an account with that e-mail. please use /login",
                                     ];
+                                    $oMsgTbl->update([
+                                        'parse_next' => 0,
+                                    ],'Message_ID = '.$oReplyCheck->Message_ID);
                                     TelegramController::sendTelegramMessage($aContent);
                                 } else {
                                     $aContent = [
@@ -1073,7 +1109,7 @@ class TelegramController extends CoreEntityController
 
                             break;
                         case 'username':
-                            $sUserCheck = $oUpdate->message->text;
+                            $sUserCheck = (isset($oUpdate->message->text)) ? $oUpdate->message->text : '';
                             $bIsEmail = stripos($sUserCheck,'@');
                             $oPlcUserCheck = false;
                             if($bIsEmail === false) {
